@@ -43,7 +43,7 @@ export function Sidebar() {
 
   return (
     <aside className={cn(
-      "h-screen bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col",
+      "h-screen sticky top-0 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col",
       isCollapsed ? "w-20" : "w-64"
     )}>
       <div className="p-6 flex items-center justify-between">
