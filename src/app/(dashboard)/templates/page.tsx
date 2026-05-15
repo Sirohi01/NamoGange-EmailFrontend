@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -23,37 +23,58 @@ import { useRouter } from 'next/navigation';
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const router = useRouter();
 
-  const fetchTemplates = async () => {
+  // Fetch templates from API with optional search parameter
+  const fetchTemplates = useCallback(async (search: string = '') => {
     setIsLoading(true);
     try {
-      const response = await apiClient.get('/templates');
+      const response = await apiClient.get(`/templates?search=${search}`);
       setTemplates(response.data.data);
     } catch (error) {
       toast.error('Failed to load templates');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchTemplates();
   }, []);
 
+  // Initial load
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  // Debounce logic: update debouncedQuery only after 500ms of inactivity
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
+  // Trigger API call when debounced query changes (Server-side search)
+  useEffect(() => {
+    // We only trigger if the query actually changed to avoid double calls on mount
+    fetchTemplates(debouncedQuery);
+  }, [debouncedQuery, fetchTemplates]);
+
   const handleDeleteTemplate = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't navigate when deleting
+    e.stopPropagation(); 
     if (!confirm('Delete this template?')) return;
     try {
       await apiClient.delete(`/templates/${id}`);
       toast.success('Template removed');
-      fetchTemplates();
+      fetchTemplates(debouncedQuery);
     } catch (error) {
       toast.error('Failed to delete');
     }
   };
 
-  if (isLoading) {
+  if (isLoading && templates.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <RefreshCw className="w-10 h-10 text-blue-600 animate-spin" />
@@ -81,9 +102,16 @@ export default function TemplatesPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input 
-            placeholder="Search templates..." 
+            placeholder="Search on server..." 
             className="pl-10 border-none bg-transparent focus-visible:ring-0"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
+          {isLoading && searchQuery !== '' && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <RefreshCw className="w-3 h-3 text-blue-500 animate-spin" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -99,7 +127,6 @@ export default function TemplatesPage() {
                     <div dangerouslySetInnerHTML={{ __html: template.content }} className="scale-[0.25] origin-top-left w-[400%] h-[400%]" />
                 </div>
                 
-                {/* Visual Indicator on Hover */}
                 <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3">
                   <div className="bg-white text-slate-900 px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2 shadow-2xl">
                     <Edit3 className="w-3.5 h-3.5" /> Edit & Preview
@@ -136,6 +163,13 @@ export default function TemplatesPage() {
             </CardContent>
           </Card>
         ))}
+
+        {!isLoading && templates.length === 0 && (
+          <div className="col-span-full py-12 text-center bg-slate-50 dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+            <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium">No templates found for "{debouncedQuery}"</p>
+          </div>
+        )}
       </div>
     </div>
   );
