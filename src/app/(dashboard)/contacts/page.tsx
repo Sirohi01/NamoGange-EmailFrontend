@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -16,7 +16,6 @@ import {
   UserPlus, 
   Upload, 
   Filter,
-  MoreHorizontal,
   RefreshCw,
   Trash2,
   Users as UsersIcon,
@@ -24,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from 'sonner';
@@ -43,12 +43,12 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newContact, setNewContact] = useState({ email: '', firstName: '', lastName: '' });
   
-  // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -58,7 +58,7 @@ export default function ContactsPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchContacts = async (page = 1, search = '') => {
+  const fetchContacts = useCallback(async (page = 1, search = '') => {
     setIsLoading(true);
     try {
       const response = await apiClient.get(`/contacts?page=${page}&limit=${pagination.limit}&search=${search}`);
@@ -69,15 +69,21 @@ export default function ContactsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [pagination.limit]);
 
+  // Handle Search Debouncing
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchContacts(1, searchQuery);
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
     }, 500);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  // Trigger search when debounced query changes
+  useEffect(() => {
+    fetchContacts(1, debouncedQuery);
+  }, [debouncedQuery, fetchContacts]);
 
   const handleAddContact = async () => {
     if (!newContact.email) return;
@@ -87,7 +93,7 @@ export default function ContactsPage() {
       toast.success('Contact added successfully');
       setNewContact({ email: '', firstName: '', lastName: '' });
       setIsDialogOpen(false);
-      fetchContacts(pagination.page, searchQuery);
+      fetchContacts(1, debouncedQuery);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to add contact');
     } finally {
@@ -108,7 +114,7 @@ export default function ContactsPage() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       toast.success(response.data.message || 'Contacts imported successfully');
-      fetchContacts(1, searchQuery);
+      fetchContacts(1, debouncedQuery);
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to import contacts');
     } finally {
@@ -122,7 +128,7 @@ export default function ContactsPage() {
     try {
       await apiClient.delete(`/contacts/${id}`);
       toast.success('Contact deleted');
-      fetchContacts(pagination.page, searchQuery);
+      fetchContacts(pagination.page, debouncedQuery);
     } catch (error) {
       toast.error('Failed to delete contact');
     }
@@ -145,7 +151,7 @@ export default function ContactsPage() {
           />
           <Button 
             variant="outline" 
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 border-slate-200"
             onClick={() => fileInputRef.current?.click()}
             disabled={isImporting}
           >
@@ -155,10 +161,10 @@ export default function ContactsPage() {
           
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger render={
-            <Button className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2">
-              <UserPlus className="w-4 h-4" /> Add Contact
-            </Button>
-          } />
+                <Button className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 shadow-lg shadow-blue-100">
+                <UserPlus className="w-4 h-4" /> Add Contact
+                </Button>
+            } />
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Contact</DialogTitle>
@@ -172,6 +178,7 @@ export default function ContactsPage() {
                     <Label htmlFor="firstName">First Name</Label>
                     <Input 
                       id="firstName" 
+                      placeholder="e.g. John"
                       value={newContact.firstName}
                       onChange={(e) => setNewContact({ ...newContact, firstName: e.target.value })}
                     />
@@ -180,6 +187,7 @@ export default function ContactsPage() {
                     <Label htmlFor="lastName">Last Name</Label>
                     <Input 
                       id="lastName" 
+                      placeholder="e.g. Doe"
                       value={newContact.lastName}
                       onChange={(e) => setNewContact({ ...newContact, lastName: e.target.value })}
                     />
@@ -200,8 +208,9 @@ export default function ContactsPage() {
                 <Button 
                   onClick={handleAddContact} 
                   disabled={isAdding || !newContact.email}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 w-full"
                 >
+                  {isAdding ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                   {isAdding ? 'Adding...' : 'Add Contact'}
                 </Button>
               </DialogFooter>
@@ -216,80 +225,82 @@ export default function ContactsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input 
-                placeholder="Search contacts..." 
-                className="pl-10 border-slate-200 focus:ring-blue-500"
+                placeholder="Search by name or email..." 
+                className="pl-10 border-slate-100 focus:ring-blue-500 bg-slate-50/50"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              {isLoading && searchQuery !== '' && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <RefreshCw className="w-3 h-3 text-blue-500 animate-spin" />
+                </div>
+              )}
             </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="w-4 h-4" /> Filters
-            </Button>
           </div>
         </CardContent>
       </Card>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50 dark:bg-slate-800/50">
-              <TableHead className="font-semibold">Contact</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="font-semibold">Added At</TableHead>
-              <TableHead className="text-right font-semibold">Actions</TableHead>
+            <TableRow className="bg-slate-50/50 dark:bg-slate-800/50 border-none">
+              <TableHead className="font-bold text-slate-500 uppercase text-[10px] tracking-widest pl-6">Contact Details</TableHead>
+              <TableHead className="font-bold text-slate-500 uppercase text-[10px] tracking-widest">Status</TableHead>
+              <TableHead className="font-bold text-slate-500 uppercase text-[10px] tracking-widest">Added At</TableHead>
+              <TableHead className="text-right font-bold text-slate-500 uppercase text-[10px] tracking-widest pr-6">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
+            {isLoading && contacts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8 text-slate-500">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-                  Loading contacts...
+                <TableCell colSpan={4} className="text-center py-12 text-slate-500">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-3 text-blue-600" />
+                  <p className="font-medium">Searching subscribers...</p>
                 </TableCell>
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-12 text-slate-500">
-                  <UsersIcon className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p className="font-medium text-lg">No contacts found</p>
-                  <p className="text-sm">Start building your audience by adding contacts.</p>
+                <TableCell colSpan={4} className="text-center py-16 text-slate-500">
+                  <UsersIcon className="w-16 h-16 mx-auto mb-4 opacity-10" />
+                  <p className="font-bold text-xl text-slate-900 dark:text-white">No contacts found</p>
+                  <p className="text-sm max-w-xs mx-auto mt-1">Try adjusting your search query or add a new contact to your list.</p>
                 </TableCell>
               </TableRow>
             ) : (
               contacts.map((contact) => (
-                <TableRow key={contact._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                  <TableCell>
+                <TableRow key={contact._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors border-slate-50 dark:border-slate-800">
+                  <TableCell className="pl-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 font-medium text-xs">
+                      <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-xs border border-blue-100 dark:border-blue-800">
                         {contact.firstName?.[0] || contact.email[0].toUpperCase()}
                         {contact.lastName?.[0]}
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-medium text-slate-900 dark:text-white">
+                        <span className="font-bold text-slate-900 dark:text-white">
                           {contact.firstName ? `${contact.firstName} ${contact.lastName || ''}` : contact.email}
                         </span>
-                        <span className="text-xs text-slate-500">{contact.email}</span>
+                        <span className="text-xs text-slate-500 font-medium">{contact.email}</span>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className={
                       contact.isBlacklisted 
-                        ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" 
-                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                        ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border-none px-3 py-1" 
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-none px-3 py-1"
                     }>
                       {contact.isBlacklisted ? 'Blacklisted' : 'Active'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm text-slate-600 dark:text-slate-400">
-                    {new Date(contact.createdAt).toLocaleDateString()}
+                  <TableCell className="text-xs text-slate-500 font-bold">
+                    {new Date(contact.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right pr-6">
                     <Button 
                       variant="ghost" 
                       size="icon"
                       onClick={() => handleDeleteContact(contact._id)}
-                      className="text-slate-400 hover:text-rose-600"
+                      className="h-8 w-8 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -302,29 +313,30 @@ export default function ContactsPage() {
 
         {/* Pagination UI */}
         {!isLoading && contacts.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t border-slate-200 dark:border-slate-800">
-            <div className="text-sm text-slate-500">
-                Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-medium">{pagination.total}</span> contacts
+          <div className="flex items-center justify-between px-6 py-4 bg-slate-50/30 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                Showing <span className="text-slate-900 dark:text-white">{Math.min(pagination.total, (pagination.page - 1) * pagination.limit + 1)} - {Math.min(pagination.page * pagination.limit, pagination.total)}</span> of {pagination.total}
             </div>
             <div className="flex items-center gap-2">
                 <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => fetchContacts(pagination.page - 1, searchQuery)}
+                    onClick={() => fetchContacts(pagination.page - 1, debouncedQuery)}
                     disabled={pagination.page === 1}
+                    className="h-8 text-xs border-slate-200"
                 >
-                    <ChevronLeft className="w-4 h-4" /> Previous
+                    <ChevronLeft className="w-3 h-3 mr-1" /> Prev
                 </Button>
                 <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(pagination.pages, 5) }, (_, i) => {
-                        const pageNum = i + 1; // Simplification for now
+                    {Array.from({ length: Math.min(pagination.pages, 3) }, (_, i) => {
+                        const pageNum = i + 1;
                         return (
                             <Button 
                                 key={pageNum}
                                 variant={pagination.page === pageNum ? "default" : "outline"}
                                 size="sm"
-                                className="w-8 h-8 p-0"
-                                onClick={() => fetchContacts(pageNum, searchQuery)}
+                                className={cn("w-8 h-8 p-0 text-xs", pagination.page === pageNum ? "bg-blue-600" : "border-slate-200")}
+                                onClick={() => fetchContacts(pageNum, debouncedQuery)}
                             >
                                 {pageNum}
                             </Button>
@@ -334,10 +346,11 @@ export default function ContactsPage() {
                 <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => fetchContacts(pagination.page + 1, searchQuery)}
+                    onClick={() => fetchContacts(pagination.page + 1, debouncedQuery)}
                     disabled={pagination.page === pagination.pages}
+                    className="h-8 text-xs border-slate-200"
                 >
-                    Next <ChevronRight className="w-4 h-4" />
+                    Next <ChevronRight className="w-3 h-3 ml-1" />
                 </Button>
             </div>
           </div>
