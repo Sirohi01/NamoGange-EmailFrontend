@@ -24,8 +24,6 @@ export function StatsCard({ title, value, change, trend, icon: Icon, color }: St
               "text-xs font-medium mt-1 flex items-center gap-1",
               trend === 'up' ? "text-emerald-500" : "text-rose-500"
             )}>
-              {trend === 'up' ? '↑' : '↓'} {change} 
-              <span className="text-slate-400">vs last month</span>
             </p>
           </div>
           <div className={cn(
