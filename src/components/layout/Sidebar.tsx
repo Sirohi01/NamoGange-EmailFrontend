@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   Users, 
@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useDispatch } from 'react-redux';
+import { logout } from '@/redux/slices/authSlice';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
@@ -30,7 +32,14 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const dispatch = useDispatch();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
+
+  const handleLogout = () => {
+    dispatch(logout());
+    router.push('/login');
+  };
 
   return (
     <aside className={cn(
@@ -69,8 +78,8 @@ export function Sidebar() {
       <div className="p-4 border-t border-slate-200 dark:border-slate-800">
         <Button 
           variant="ghost" 
-          className="w-full flex items-center gap-3 text-slate-600 dark:text-slate-400 hover:text-red-600"
-          onClick={() => console.log('Logout')}
+          className="w-full flex items-center gap-3 text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+          onClick={handleLogout}
         >
           <LogOut className="w-5 h-5 shrink-0" />
           {!isCollapsed && <span>Logout</span>}
